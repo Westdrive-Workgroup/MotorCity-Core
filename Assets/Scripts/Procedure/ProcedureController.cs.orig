@@ -1,0 +1,762 @@
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using System.IO;
+using System.Threading.Tasks;
+using UnityEngine.Networking;
+using UnityEngine.Serialization;
+using Object = UnityEngine.Object;
+using Random = UnityEngine.Random;
+/// <summary>
+/// Sets the languages for the texts and controlls the next Block Modul
+/// </summary>
+public class ProcedureController : MonoBehaviour
+{
+    [Space, Header("Cameras")] public GameObject monoCamera;
+    public GameObject stereoCamera;
+    [Space, Header("Components")] public GameObject camera;
+    public ProcedureProfile experiment;
+    public CarsManager carManager;
+    public PederstianManager pedestrianManager;
+    public GameObject annoucementArea;
+
+    [Space, Header("Record specific components")]
+    public List<GameObject> disbaleOnRecord;
+
+    [Space, Header("Internal Components")] private List<string> ADVPaths;
+    private List<Object> ADVModules;
+    private Payload experimentData;
+    private bool readyToEnd;
+    [Space, Header("Anouncement Area")] public Transform cameraStand;
+    public GameObject announcementBoard;
+
+
+    [FormerlySerializedAs("presenceTreshold"), Space, Header("User Presence Control"),
+     Tooltip("Time in seconds which considered as user abondoning the experiment")]
+    public float presenceThreshold = 5;
+    [Tooltip("Time intervals in seconds to check for user presences")]
+    public float controlInterval = 1;
+    private bool isEndTriggered = false;
+    private bool blockEndTriggered = false;
+    private bool userPresent = false;
+    private bool userCheckLock = false;
+    [Space, Header("Internal parameters")] private int nextIndex;
+    private bool firstBlock = false;
+    public float startPercentage = 0f;
+    private string validationServer;
+    private string insertServer;
+    private string QuestionaireServer;
+    private bool serverError = false;
+    public float loadingDelay = 3f;
+    [Space, Header("Announcement Texts")] private string consentText;
+    private string welcomeText;
+    private string dataSavingText;
+    private string dataLoadingText;
+    private string endBlockText;
+    private string serverErrorText;
+    private string endExperimentText;
+    private string endExperimentWithCodeText;
+    private string experimentLoadingText;
+    private string experimentLoadingPercentageText;
+    private string transferText;
+    //sets the language for the Texts
+    private void InitiateTexts()
+    {
+        if (WestdriveSettings.language == "DE")
+        {
+            consentText = Westdrive.Settings.ReadValue("germanTexts", "consentText");
+            welcomeText = Westdrive.Settings.ReadValue("germanTexts", "welcomeText");
+            dataSavingText = Westdrive.Settings.ReadValue("germanTexts", "dataSavingText");
+            dataLoadingText = Westdrive.Settings.ReadValue("germanTexts", "dataLoadingText");
+            endBlockText = Westdrive.Settings.ReadValue("germanTexts", "endBlockText");
+            serverErrorText = Westdrive.Settings.ReadValue("germanTexts", "serverErrorText");
+            endExperimentText = Westdrive.Settings.ReadValue("germanTexts", "endExperimentText");
+            endExperimentWithCodeText = Westdrive.Settings.ReadValue("germanTexts", "endExperimentWithCodeText");
+            experimentLoadingText = Westdrive.Settings.ReadValue("germanTexts", "experimentLoadingText");
+            experimentLoadingPercentageText = Westdrive.Settings.ReadValue("germanTexts", "experimentLoadingPercentageText");
+            transferText = Westdrive.Settings.ReadValue("germanTexts", "transferText");
+        }
+        else if (WestdriveSettings.language == "ENG")
+        {
+            consentText = Westdrive.Settings.ReadValue("englishTexts", "consentText");
+            welcomeText = Westdrive.Settings.ReadValue("englishTexts", "welcomeText");
+            dataSavingText = Westdrive.Settings.ReadValue("englishTexts", "dataSavingText");
+            dataLoadingText = Westdrive.Settings.ReadValue("englishTexts", "dataLoadingText");
+            endBlockText = Westdrive.Settings.ReadValue("englishTexts", "endBlockText");
+            serverErrorText = Westdrive.Settings.ReadValue("englishTexts", "serverErrorText");
+            endExperimentText = Westdrive.Settings.ReadValue("englishTexts", "endExperimentText");
+            endExperimentWithCodeText = Westdrive.Settings.ReadValue("englishTexts", "endExperimentWithCodeText");
+            experimentLoadingText = Westdrive.Settings.ReadValue("englishTexts", "experimentLoadingText");
+            experimentLoadingPercentageText = Westdrive.Settings.ReadValue("englishTexts", "experimentLoadingPercentageText");
+            transferText = Westdrive.Settings.ReadValue("englishTexts", "transferText");
+        }
+    }
+
+    private void Awake()
+    {
+        
+        experimentData = new Payload();
+        WestdriveSettings.systemTime = this.GetComponent<TimeGaurd>();
+        WestdriveSettings.frameCorrection = 0;
+        WestdriveSettings.isPlaying = false;
+        serverError = false;
+        Westdrive.Settings.SetConfigFile("Assets/Resources/Settings/Config.ini");
+        validationServer = Westdrive.Settings.ReadValue("server", "validate");
+        insertServer = Westdrive.Settings.ReadValue("server", "insert");
+        QuestionaireServer = Westdrive.Settings.ReadValue("server", "questionaire");
+        //checks with mode is enabled
+        switch (Westdrive.Settings.ReadValue("engine", "mode"))
+        {
+            case "record":
+                WestdriveSettings.SimulationMode = mode.record;
+                break;
+            case "simulate":
+                WestdriveSettings.SimulationMode = mode.simulate;
+                break;
+            default:
+                WestdriveSettings.SimulationMode = mode.simulate;
+                break;
+        }
+        WestdriveSettings.language = Westdrive.Settings.ReadValue("language", "code");
+        InitiateTexts();
+        //checks if the values should be interpolated or not
+        if (Westdrive.Settings.ReadValue("smoothing", "interpolate") == "true")
+        {
+            WestdriveSettings.useInterpolate = true;
+        }
+        else
+        {
+            WestdriveSettings.useInterpolate = false;
+        }
+        annoucementArea.SetActive(true);
+        //only activates in the unity editor
+#if UNITY_EDITOR
+        stereoCamera.SetActive(false);
+        camera = monoCamera;
+        camera.SetActive(true);
+#else
+            monoCamera.SetActive(false);
+            camera = stereoCamera;
+            camera.SetActive(true);
+#endif
+        //monoCamera.SetActive(false);
+        //camera = stereoCamera;
+        //camera.SetActive(true
+        isEndTriggered = false;
+        blockEndTriggered = false;
+        userPresent = false;
+        userCheckLock = false;
+        ADVPaths = new List<string>(experiment.ADVPaths);
+        ADVModules = new List<Object>(experiment.ADVModules);
+        WestdriveSettings.Progress = 0;
+        nextIndex = 0;
+        WestdriveSettings.language = experiment.language;
+        WestdriveSettings.radioTalkEnglish = experiment.radioTalkEnglish;
+        WestdriveSettings.radioTalkGerman = experiment.radioTalkGerman;
+        WestdriveSettings.taxiDriverMonolougeEnglish = experiment.taxiDriverMonolougeEnglish;
+        WestdriveSettings.taxiDriverMonolougeGerman = experiment.taxiDriverMonolougeGerman;
+        if (carManager != null)
+            carManager.gameObject.SetActive(true);
+        else
+            Debug.LogWarning("No car manager in the scene");
+        if(pedestrianManager != null)
+            pedestrianManager.gameObject.SetActive(true);
+        else
+            Debug.LogWarning("No pedestrian manager in the scene");
+        announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = welcomeText;
+        if (WestdriveSettings.SimulationMode == mode.record)
+        {
+            foreach (GameObject target in disbaleOnRecord)
+            {
+                target.SetActive(false);
+
+            }
+        }
+        camera.transform.position = cameraStand.position;
+        camera.transform.rotation = cameraStand.rotation;
+        camera.transform.parent = cameraStand;
+    }
+    //Enables the first block upon start and initiates the chooseNextBlock methode
+    private void Start()
+    {
+        firstBlock = true;
+        chooseNextBlock();
+
+    }
+    //if the user is not present, wait for the elapsed time to cross the presenceThreshold to save the data and stop the application
+    private IEnumerator checkUser()
+    {
+        float timeElapsed = 0;
+        while (timeElapsed < presenceThreshold)
+        {
+            if (!userPresent)
+            {
+                timeElapsed += controlInterval;
+                yield return new WaitForSeconds(controlInterval);
+            }
+            else
+            {
+                userCheckLock = false;
+                StopCoroutine(checkUser());
+                yield return null;
+            }
+        }
+        if (!userPresent)
+        {
+            if (WestdriveSettings.SimulationMode == global::mode.simulate)
+            {
+                if (experiment.usetracking)
+                {
+                    //Tracker.saveToFileAsync(Application.dataPath + Westdrive.Settings.ReadValue("[output]", "subPath") + WestdriveSettings.ParticipantUID);
+                    string dataPath = Application.dataPath + Westdrive.Settings.ReadValue("output", "subPath") +
+                                      WestdriveSettings.ParticipantUID;
+                    Westdrive.IO.SaveToFileAsync(dataPath, camera.GetComponent<GenericTracker>().recordedData, camera.GetComponent<GenericTracker>().currentContext, ".raw");
+                    while (WestdriveSettings.CheckIO != IOState.ready)
+                    {
+                        announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = dataSavingText;
+                        yield return null;
+                       
+                    }
+                }
+            }
+            //only activates in the Unity Editor
+#if UNITY_EDITOR
+            // Application.Quit() does not work in the editor so
+            // UnityEditor.EditorApplication.isPlaying need to be set to false to end the game
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+                Application.Quit();
+#endif
+            yield return null;
+        }
+        yield return null;
+    }
+    //checks if the User is present 
+    public void UserPresent()
+    {
+        userPresent = true;
+    }
+   //if user not present and End is not reached activates the userCheckLock, If the end is reached starts the EndProcess
+    public void UserNotPresent()
+    {
+        userPresent = false;
+        if (!isEndTriggered && !blockEndTriggered && !userCheckLock)
+        {
+            userCheckLock = true;
+            StartCoroutine(checkUser());
+        }
+        if (isEndTriggered && !blockEndTriggered)
+            StartCoroutine(EndProccess());
+        
+    }
+    void Update()
+    {
+        //checking for record or simulation mode
+        if (WestdriveSettings.SimulationMode == mode.record)
+        {
+            //if the progress is further then the trigger on path transfer either t o lobby 1 or 0
+            if ((WestdriveSettings.Progress > experiment.endTriggerOnPath))
+            {
+                
+               
+                if (ADVPaths.Count != 0)
+                {
+                    StartCoroutine(transferToLobby(1));
+                }
+
+                else
+                {
+                    StartCoroutine(transferToLobby(0));
+                }
+            }
+        }
+        else if (WestdriveSettings.SimulationMode == mode.simulate)
+        {
+            //if the progress is further then the trigger on path transfer either t o lobby 1 or 0
+            if ((WestdriveSettings.Progress >= experiment.endTriggerFramePercentage))
+            {
+
+
+                if (ADVPaths.Count != 0)
+                {
+                    StartCoroutine(transferToLobby(1));
+                }
+
+                else
+                {
+                    StartCoroutine(transferToLobby(0));
+                }
+            }
+        }
+
+
+    }
+
+    // saves the recorded data and starts the questionnaire   
+    private IEnumerator EndProccess()
+    {
+        if (WestdriveSettings.SimulationMode == global::mode.simulate)
+        {
+            if (experiment.usetracking)
+            {
+                
+                string dataPath = Application.dataPath + Westdrive.Settings.ReadValue("output", "subPath") +
+                                  WestdriveSettings.ParticipantUID;
+                Westdrive.IO.SaveToFileAsync(dataPath, camera.GetComponent<GenericTracker>().recordedData, camera.GetComponent<GenericTracker>().currentContext, ".raw");
+                while (WestdriveSettings.CheckIO != IOState.ready)
+                {
+                    announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = dataSavingText;
+                    yield return null;
+                }
+            }
+        }
+        Debug.Log("button down");
+        Debug.Log("user code =" + WestdriveSettings.ParticipantCode);
+        Debug.Log("user uid = " + WestdriveSettings.ParticipantUID);
+        if (experiment.openQuestionaireAfterExperiment && !serverError)
+        {
+            Application.OpenURL(QuestionaireServer);
+        }
+        
+        readyToEnd = false;
+        //only starts in the Unity Editor
+#if UNITY_EDITOR
+        // Application.Quit() does not work in the editor so
+        // UnityEditor.EditorApplication.isPlaying need to be set to false to end the game
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+                Application.Quit();
+#endif
+        yield return null;
+    }
+    //Stops all Coroutines 
+    private void OnDestroy()
+    {
+        StopAllCoroutines();
+    }
+    // mode == 1 -> end block, mode == 0 -> end experiment
+    private IEnumerator transferToLobby(int mode = 1)
+    {
+        annoucementArea.SetActive(true);
+        WestdriveSettings.Progress = 0;
+        camera.transform.position = cameraStand.position;
+        camera.transform.rotation = cameraStand.rotation;
+        camera.transform.parent = cameraStand;
+        if (WestdriveSettings.SimulationMode == global::mode.simulate)
+        {
+            if (experiment.usetracking)
+            {
+                camera.GetComponent<GenericTracker>().StopTracking();
+            }
+        }
+        if (WestdriveSettings.SimulationMode == global::mode.record)
+            experimentData.Data.Add("ADV", GameObject.FindGameObjectWithTag("ADV").GetComponent<CarEngine>().getData()); 
+        Destroy(GameObject.FindGameObjectWithTag("ADV"));
+        if (WestdriveSettings.SimulationMode == global::mode.record)
+        {
+            carManager.ResetSystemAsync(experimentData);
+            pedestrianManager.ResetSystemAsync(experimentData);
+        }
+        else if (WestdriveSettings.SimulationMode == global::mode.simulate)
+        {
+            carManager.ResetSystemAsync();
+            pedestrianManager.ResetSystemAsync();
+        }
+
+        if (WestdriveSettings.SimulationMode == global::mode.record)
+        {
+            Westdrive.IO.SaveToFileAsync(Application.dataPath + "/Resources/Settings/" + experiment.name, experimentData,"-test",".bin");
+            while (WestdriveSettings.CheckIO != IOState.ready)
+            {
+                announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = dataSavingText;
+
+                yield return null;
+            }
+        }
+        
+
+        if (mode == 1)
+        {
+            announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = endBlockText;
+            
+            while (!Input.anyKeyDown)
+            {
+                yield return null;
+            }
+            chooseNextBlock();
+        }
+        else if (mode == 0)
+        {
+            if (experiment.userOnlineQuestionaire)
+            {
+                if (experiment.doUserValidation)
+                {
+                    WestdriveSettings.ResetParticipantCode();
+                    //bool doesCodeExist = true;
+                    //while (doesCodeExist)
+                    //{
+                    //    doesCodeExist = false;
+                    //    UnityWebRequest validate =
+                    //        UnityWebRequest.Get(validationServer + "check?id=" + WestdriveSettings.ParticipantCode.ToString() + "&uid=" + WestdriveSettings.ParticipantCode.ToString());
+                    //    yield return validate.SendWebRequest();
+
+                    //    if (validate.isNetworkError || validate.isHttpError)
+                    //    {
+                    //        Debug.Log(validate.error);
+                    //        serverError = true;
+                    //        break;
+                    //    }
+                    //    else
+                    //    {
+                    //        // Show results as text
+                    //        if (validate.downloadHandler.text == "exists")
+                    //            doesCodeExist = true;
+                    //        else
+                    //            WestdriveSettings.ResetParticipantCode();
+                    //        if (validate.downloadHandler.text == "stored")
+                    //            Debug.Log("Participant Insertion complete!");
+                    //        else
+                    //            Debug.Log("Participant Insertion failed!");
+                    //    }
+
+
+                    //}
+                    UnityWebRequest validate =
+                        UnityWebRequest.Get(validationServer + "check?id=" + WestdriveSettings.ParticipantCode.ToString() + "&uid=" + WestdriveSettings.ParticipantCode.ToString());
+                    yield return validate.SendWebRequest();
+
+                    if (validate.isNetworkError || validate.isHttpError)
+                    {
+                        Debug.Log(validate.error);
+                        serverError = true;
+                        //break;
+                    }
+                    else
+                    {
+                        // Show results as text
+                        if (validate.downloadHandler.text == "exists")
+                            Debug.Log("probleeeeeem!");
+                           // doesCodeExist = true;
+                        else
+                            WestdriveSettings.ResetParticipantCode();
+                        if (validate.downloadHandler.text == "stored")
+                            Debug.Log("Participant Insertion complete!");
+                        else
+                            Debug.Log("Participant Insertion failed!");
+                    }
+                    yield return null;
+                }
+                else
+                {
+                    UnityWebRequest validate =
+                        UnityWebRequest.Get(validationServer + "check?id=" + WestdriveSettings.ParticipantCode.ToString() + "&uid=" + WestdriveSettings.ParticipantCode.ToString());
+                    yield return validate.SendWebRequest();
+
+                    if (validate.isNetworkError || validate.isHttpError)
+                    {
+                        Debug.Log(validate.error);
+                        serverError = true;
+                        
+                    }
+                    else
+                    {
+                        // Show results as text
+                        
+                        if (validate.downloadHandler.text == "stored")
+                            Debug.Log("Participant Insertion complete!");
+                        else
+                            Debug.Log("Participant Insertion failed!");
+                    }
+                }
+
+                if (serverError)
+                {
+                    announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = serverErrorText;
+                    
+                }
+                else
+                {
+                    announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text =
+                        string.Format(endExperimentWithCodeText, WestdriveSettings.ParticipantCode.ToString());
+                }
+            }
+            else
+            {
+                announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = endExperimentText;
+            }
+            
+            
+            
+            
+            isEndTriggered = true;
+        }
+
+        yield return null;
+    }
+    //   chooses the next block depending on an random integer
+    private void chooseNextBlock()
+    {
+        StopAllCoroutines();
+        announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = experimentLoadingText;
+        //randomized the next item twice, first by shuffeling and then module random number
+        var nextModuleIndex = Random.Range(0, 10000);
+        if (experiment.randomizeADVPath)
+        {
+            Shuffle<string>(ref ADVPaths);
+            
+            nextIndex = Random.Range(0, 10000);
+            if (ADVPaths.Count != 0)
+                nextIndex %= ADVPaths.Count;
+            else
+                nextIndex = 0;
+        }
+        else
+        {
+            nextIndex = 0;
+        }
+
+        if (experiment.randomizeADVModules)
+        {
+            Shuffle<Object>(ref ADVModules);
+            nextModuleIndex %= ADVModules.Count;
+        }
+
+        StartCoroutine(runNextBlock(nextIndex,nextModuleIndex));
+
+    }
+    //saves the data
+    private void setData(Payload dataFromFile)
+    {
+        this.experimentData = dataFromFile;
+    }
+    // starts the Block choosen in chooseNextBlock
+    private IEnumerator runNextBlock(int index, int moduleIndex)
+    {
+        //activates all paths
+        for(int path_index = 0; path_index < GameObject.Find("Paths").transform.childCount; path_index++)
+        {
+            GameObject.Find("Paths").transform.GetChild(path_index).gameObject.SetActive(true);
+        }
+        //activates all Events
+        for (int path_index = 0; path_index < GameObject.Find("Events").transform.childCount; path_index++)
+        {
+            GameObject.Find("Events").transform.GetChild(path_index).gameObject.SetActive(true);
+        }
+        //deactivates the Events if the ADV path wasn't smoothed out with the BezierSplines
+        for (int path_index = 0; path_index < GameObject.Find("Events").transform.childCount; path_index++)
+        {
+            if(GameObject.Find("Events").transform.GetChild(path_index).gameObject.GetComponent<EventHandler>().ADVPath != GameObject.Find(ADVPaths[index]).GetComponent<BezierSplines>())
+                GameObject.Find("Events").transform.GetChild(path_index).gameObject.SetActive(false);
+        }
+
+        Debug.Log("Disabling car paths");
+        // Disables the Car paths
+        foreach(StringListDict dict in experiment.disabledCarPaths)
+        {
+            if(dict.key == ADVPaths[index])
+            {
+                foreach(string pathName in dict.value)
+                {
+                    GameObject.Find(pathName).SetActive(false);
+                }
+            }
+        }
+        Debug.Log("Disabling pedestrian paths");
+        //Disables the pedestrian paths
+        foreach (StringListDict dict in experiment.disabledPedestrianPaths)
+        {
+            if (dict.key == ADVPaths[index])
+            {
+                foreach (string pathName in dict.value)
+                {
+                    GameObject.Find(pathName).SetActive(false);
+                }
+            }
+        }
+
+        if (firstBlock)
+        {
+            if (WestdriveSettings.language == "DE")
+            {
+                this.GetComponent<AudioSource>().clip = experiment.consetTextGerman;
+                this.GetComponent<AudioSource>().Play();
+            }
+            else if (WestdriveSettings.language == "ENG")
+            {
+                this.GetComponent<AudioSource>().clip = experiment.consetTextEnglish;
+                this.GetComponent<AudioSource>().Play();
+            }
+        }
+        if (WestdriveSettings.SimulationMode == mode.simulate)
+        {
+            Westdrive.IO.AsyncReadResult<Payload> readResult = setData;
+            Westdrive.IO.LoadAsync<Payload>(Application.dataPath + "/Resources/Settings/" + experiment.name + ".bin",readResult);
+            while (WestdriveSettings.CheckIO != IOState.ready)
+            {
+                if (firstBlock)
+                {
+                    announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text =
+                        consentText + "\n" + dataLoadingText + "\n";
+                }
+                else
+                {
+                    announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text =
+                        dataLoadingText + "\n";
+                }
+
+                yield return new WaitForSeconds(loadingDelay);
+            }
+        }
+<<<<<<< HEAD
+        // creates the percentage of the loading bar
+=======
+        
+>>>>>>> 8a8fd4924993efdc896bd213e166160d03876a39
+        carManager.Init(experimentData);
+        pedestrianManager.Init(experimentData);
+        blockEndTriggered = false;
+        float assetsToLoad = carManager.assetPopulation + pedestrianManager.assetPopulation;
+        while(!carManager.loadingDone || !pedestrianManager.loadingDone)
+        {
+            if (firstBlock)
+            {
+                announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text =
+                    consentText + "\n" + string.Format(experimentLoadingPercentageText,
+                        Mathf.FloorToInt(((carManager.loadedInstances + pedestrianManager.loadedInstances) * 100f) /
+                                         assetsToLoad).ToString()) + "\n";
+            }
+            else
+            {
+                announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text =
+                    string.Format(experimentLoadingPercentageText,
+                        Mathf.FloorToInt(((carManager.loadedInstances + pedestrianManager.loadedInstances) * 100f) /
+                                         assetsToLoad).ToString()) + "\n";
+            }
+
+            yield return null;
+        }
+
+        
+        
+        yield return null;
+        if (firstBlock)
+        {
+            while (this.GetComponent<AudioSource>().isPlaying)
+            {
+                announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = consentText + "\n" + transferText + "\n"; 
+                yield return null;
+                
+            }
+
+            
+            firstBlock = false;
+        }
+        else
+        {
+            announcementBoard.GetComponent<TMPro.TextMeshProUGUI>().text = transferText;
+        }
+
+        GameObject ADV = Instantiate<GameObject>(experiment.ADVPrefab);
+        ADV.SetActive(false);
+        // activates the ADV sequenz and adjusts camera position in record mode
+        if (WestdriveSettings.SimulationMode == mode.record)
+        {
+            ADV.GetComponent<CarEngine>().path = GameObject.Find(ADVPaths[index]).GetComponent<BezierSplines>();
+            ADV.GetComponent<CarEngine>().startPecentage = startPercentage;
+            ADV.SetActive(true);
+            camera.transform.position = ADV.GetComponent<CarEngine>().cameraPos.position;
+            camera.transform.rotation = ADV.GetComponent<CarEngine>().cameraPos.rotation;
+            camera.transform.parent = ADV.GetComponent<CarEngine>().cameraPos;
+            annoucementArea.SetActive(false);
+            if (ADVModules[moduleIndex].name == "AVAS")
+            {
+                ADV.AddComponent<AVAS>();
+
+            }
+            if (ADVModules[moduleIndex].name == "RadioTalk")
+            {
+
+                ADV.GetComponent<CarEngine>().radio.SetActive(true);
+            }
+            if (ADVModules[moduleIndex].name == "TaxiDriver")
+            {
+                ADV.GetComponent<CarEngine>().taxiDriver.SetActive(true);
+                ADV.GetComponent<CarEngine>().isTaxiDriver = true;
+
+            }
+        }
+        else if (WestdriveSettings.SimulationMode == mode.simulate)
+        {
+
+            ADV.AddComponent<CarEngineReplay>();
+            ADV.GetComponent<CarEngineReplay>().cameraPos = ADV.GetComponent<CarEngine>().cameraPos;
+            ADV.GetComponent<CarEngineReplay>().taxiDriver = ADV.GetComponent<CarEngine>().taxiDriver;
+            ADV.GetComponent<CarEngineReplay>().radio = ADV.GetComponent<CarEngine>().radio;
+            ADV.GetComponent<CarEngineReplay>().SteeringWheel = ADV.GetComponent<CarEngine>().SteeringWheel;
+            ADV.GetComponent<CarEngineReplay>().Profile = ADV.GetComponent<CarEngine>().Profile;
+            ADV.GetComponent<CarEngineReplay>().wheelFL = ADV.GetComponent<CarEngine>().wheelFL;
+            ADV.GetComponent<CarEngineReplay>().wheelFR = ADV.GetComponent<CarEngine>().wheelFR;
+            ADV.GetComponent<CarEngineReplay>().wheelRL = ADV.GetComponent<CarEngine>().wheelRL;
+            ADV.GetComponent<CarEngineReplay>().wheelRR = ADV.GetComponent<CarEngine>().wheelRR;
+            ADV.GetComponent<CarEngineReplay>().caliperWheelFL = ADV.GetComponent<CarEngine>().caliperWheelFL;
+            ADV.GetComponent<CarEngineReplay>().caliperWheelFR = ADV.GetComponent<CarEngine>().caliperWheelFR;
+            ADV.GetComponent<CarEngineReplay>().path = GameObject.Find(ADVPaths[index]).GetComponent<BezierSplines>();
+            ADV.GetComponent<CarEngineReplay>().dataPoints = experimentData.Data["ADV"];
+            ADV.GetComponent<CarEngineReplay>().time = WestdriveSettings.systemTime;
+            Destroy(ADV.GetComponent<CarEngine>());
+            ADV.SetActive(true);
+            camera.transform.position = ADV.GetComponent<CarEngineReplay>().cameraPos.position;
+            camera.transform.rotation = ADV.GetComponent<CarEngineReplay>().cameraPos.rotation;
+            camera.transform.parent = ADV.GetComponent<CarEngineReplay>().cameraPos;
+            
+            if (experiment.usetracking)
+            {
+                var trackerType = Type.GetType(experiment.Tracker.name);
+                camera.AddComponent(trackerType);
+                camera.GetComponent<GenericTracker>().currentContext = ADVModules[index].name;
+                camera.GetComponent<GenericTracker>().TrackAsync();
+            }
+
+            annoucementArea.SetActive(false);
+            if (ADVModules[moduleIndex].name == "AVAS")
+            {
+                ADV.AddComponent<AVAS>();
+
+            }
+            if (ADVModules[moduleIndex].name == "RadioTalk")
+            {
+
+                ADV.GetComponent<CarEngineReplay>().radio.SetActive(true);
+            }
+            if (ADVModules[moduleIndex].name == "TaxiDriver")
+            {
+                ADV.GetComponent<CarEngineReplay>().taxiDriver.SetActive(true);
+                ADV.GetComponent<CarEngineReplay>().isTaxiDriver = true;
+
+            }
+        }
+        
+        if (!experiment.reuseADVPath)
+        {
+            ADVModules.RemoveAt(index);
+            ADVPaths.RemoveAt(index); 
+        }
+        yield return null;
+    }
+
+    //shuffles the List T with a random variable
+    void Shuffle<T>(ref List<T> array)
+    {
+        System.Random rnd = new System.Random(System.DateTime.Now.Millisecond);
+        int p = array.Count;
+        for (int n = p - 1; n > 0; n--)
+        {
+            int r = rnd.Next(0, n);
+            T t = array[r];
+            array[r] = array[n];
+            array[n] = t;
+        }
+    }
+}
