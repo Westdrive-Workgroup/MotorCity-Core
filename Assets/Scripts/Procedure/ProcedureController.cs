@@ -18,7 +18,7 @@ using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
 using UnityEngine.XR;
-using Valve.VR;
+//using Valve.VR;
 using Object = UnityEngine.Object;
 using Random = UnityEngine.Random;
 /// <summary>

@@ -6,7 +6,7 @@ using System.Net;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using Valve.VR;
+//using Valve.VR;
 using UnityEngine.Video;
 using UnityEngine.XR;
 
@@ -339,8 +339,9 @@ public class IdleController : MonoBehaviour
     private bool checkIfUserPresent()
     {
         
-        return SteamVR_Actions._default.HeadsetOnHead[SteamVR_Input_Sources.Any].state;
-        
+        //return SteamVR_Actions._default.HeadsetOnHead[SteamVR_Input_Sources.Any].state;
+        return true;
+
     }
 
     

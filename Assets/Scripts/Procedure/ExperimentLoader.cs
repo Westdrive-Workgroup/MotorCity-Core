@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Video;
 using UnityEngine.UI;
-using Valve.VR.InteractionSystem;
+//using Valve.VR.InteractionSystem;
 
 /// <summary>
 /// Loads the First announcement and loads the City in the background
@@ -66,7 +66,7 @@ public class ExperimentLoader : MonoBehaviour {
         yield return new WaitForEndOfFrame();
         
         Debug.Log("loading city scene in background started");        
-        loader.GetComponent<Valve.VR.SteamVR_LoadLevel>().Trigger();
+        //loader.GetComponent<Valve.VR.SteamVR_LoadLevel>().Trigger();
         
     }
     //stops all Coroutines
