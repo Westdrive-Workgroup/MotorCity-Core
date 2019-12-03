@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using DefaultNamespace;
+﻿using DefaultNamespace;
 using UnityEngine;
 
 public class LeasErsterManager : MonoBehaviour
@@ -20,6 +18,7 @@ public class LeasErsterManager : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        //TODO Lea: Ich muss Unity wieder lernen!
         car.UpdatePosition();
         //meineKamera.transform.position = meineKamera.transform.position + Vector3.one;
     }
