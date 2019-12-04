@@ -4,6 +4,7 @@
 TagManager:
   serializedVersion: 2
   tags:
+  - pedestrian spawn
   - car spawn
   layers:
   - Default
